@@ -1,0 +1,32 @@
+{
+  "name": "multi-process-etl-pipeline",
+  "version": "1.0.0",
+  "description": "multi process etl pipeline",
+  "main": "index.js",
+  "scripts": {
+    "start": "tsc && node dist/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skazhar42/multi-process-etl-pipeline.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/skazhar42/multi-process-etl-pipeline/issues"
+  },
+  "homepage": "https://github.com/skazhar42/multi-process-etl-pipeline#readme",
+  "dependencies": {
+    "express": "^5.2.1",
+    "fastify": "^5.8.4"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.0",
+    "nodemon": "^3.1.14",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.2"
+  }
+}
