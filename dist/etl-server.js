@@ -5,8 +5,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.etlServer = void 0;
 const fastify_1 = __importDefault(require("fastify"));
-const etl_1 = require("./etl");
+const etl_pipeline_1 = require("./etl-pipeline");
 exports.etlServer = (0, fastify_1.default)({ logger: true });
+const etlServerPort = 9000;
 let serverStarted = false;
 let pipelineRunning = false;
 exports.etlServer.get("/health", async () => {
@@ -17,7 +18,7 @@ exports.etlServer.post("/start-etl", async () => {
         return { status: "ETL pipeline already running !!" };
     }
     pipelineRunning = true;
-    (0, etl_1.etlPipeline)(); // run ETL in background
+    (0, etl_pipeline_1.etlPipeline)(); // run ETL in background
     return { status: "ETL pipeline started !!" };
 });
 // Endpoint for etl to ping parent via IPC with message body
@@ -37,14 +38,14 @@ exports.etlServer.post("/ping-parent", async (request, reply) => {
 });
 async function startEtlServer() {
     try {
-        await exports.etlServer.listen({ port: 9000, host: "0.0.0.0" });
+        await exports.etlServer.listen({ port: etlServerPort, host: "0.0.0.0" });
         serverStarted = true;
         // Notify parent that etl is ready
         if (process.send) {
             process.send({
                 type: "READY",
                 pid: process.pid,
-                port: 3001,
+                port: etlServerPort,
             });
         }
     }

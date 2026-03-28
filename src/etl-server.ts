@@ -3,6 +3,7 @@ import Fastify from "fastify";
 import { etlPipeline } from "./etl-pipeline";
 
 export const etlServer = Fastify({ logger: true });
+const etlServerPort = 9000;
 
 let serverStarted = false;
 let pipelineRunning = false;
@@ -40,7 +41,7 @@ etlServer.post("/ping-parent", async (request, reply) => {
 
 async function startEtlServer() {
   try {
-    await etlServer.listen({ port: 9000, host: "0.0.0.0" });
+    await etlServer.listen({ port: etlServerPort, host: "0.0.0.0" });
     serverStarted = true;
 
     // Notify parent that etl is ready
@@ -48,7 +49,7 @@ async function startEtlServer() {
       process.send({
         type: "READY",
         pid: process.pid,
-        port: 3001,
+        port: etlServerPort,
       });
     }
   } catch (err) {

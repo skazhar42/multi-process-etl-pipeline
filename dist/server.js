@@ -7,6 +7,8 @@ const fastify_1 = __importDefault(require("fastify"));
 const child_process_1 = require("child_process");
 const path_1 = __importDefault(require("path"));
 const app = (0, fastify_1.default)({ logger: true });
+const etlServerPort = 9000;
+const serverPort = 3000;
 let etlProcess = null;
 // Helper to send IPC message safely
 function sendMessageToEtl(message) {
@@ -22,7 +24,7 @@ app.get("/health", async () => {
 });
 app.get("/etl/health", async (request, reply) => {
     try {
-        const response = await fetch("http://0.0.0.0:9000/health");
+        const response = await fetch(`http://0.0.0.0:${etlServerPort}/health`);
         const data = await response.json();
         return data;
     }
@@ -32,7 +34,7 @@ app.get("/etl/health", async (request, reply) => {
 });
 app.post("/etl/start", async (request, reply) => {
     try {
-        const response = await fetch("http://0.0.0.0:9000/start-etl", {
+        const response = await fetch(`http://0.0.0.0:${etlServerPort}/start-etl`, {
             method: "POST",
         });
         const data = await response.json();
@@ -45,7 +47,7 @@ app.post("/etl/start", async (request, reply) => {
 app.post("/etl/ping-parent", async (request, reply) => {
     try {
         const body = request.body;
-        const response = await fetch("http://0.0.0.0:9000/ping-parent", {
+        const response = await fetch(`http://0.0.0.0:${etlServerPort}/ping-parent`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message: body?.message ?? "Hello from parent" }),
@@ -101,8 +103,8 @@ app.post("/ping-etl", async (request, reply) => {
 });
 async function startParent() {
     try {
-        await app.listen({ port: 3000, host: "0.0.0.0" });
-        app.log.info("Parent server running on port 3000");
+        await app.listen({ port: serverPort, host: "0.0.0.0" });
+        app.log.info("Parent server running on port :" + serverPort);
     }
     catch (err) {
         app.log.error(err);
