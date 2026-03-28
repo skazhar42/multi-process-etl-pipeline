@@ -13,7 +13,7 @@ let pipelineRunning = false;
 exports.etlServer.get("/health", async () => {
     return { status: "etl-server-ok" };
 });
-exports.etlServer.post("/start-etl", async () => {
+exports.etlServer.post("/start-etl-pipeline", async () => {
     if (pipelineRunning) {
         return { status: "ETL pipeline already running !!" };
     }
@@ -39,6 +39,7 @@ exports.etlServer.post("/ping-parent", async (request, reply) => {
 async function startEtlServer() {
     try {
         await exports.etlServer.listen({ port: etlServerPort, host: "0.0.0.0" });
+        exports.etlServer.log.info("ETL server running on port : " + etlServerPort);
         serverStarted = true;
         // Notify parent that etl is ready
         if (process.send) {

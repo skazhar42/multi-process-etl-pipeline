@@ -8,12 +8,13 @@ const serverPort = 3000;
 
 let etlProcess: ChildProcess | null = null;
 
+
 // Helper to send IPC message safely
-function sendMessageToEtl(message: any) {
+function sendMessageToEtlServer(message: any) {
   if (etlProcess && etlProcess.connected) {
     etlProcess.send(message);
   } else {
-    app.log.warn("Etl process not running");
+    app.log.warn("Etl server not running");
   }
 }
 
@@ -31,9 +32,9 @@ app.get("/etl/health", async (request, reply) => {
     }
 });
 
-app.post("/etl/start", async (request, reply) => {
+app.post("/etl/start-pipeline", async (request, reply) => {
     try {
-        const response = await fetch(`http://0.0.0.0:${etlServerPort}/start-etl`, {
+        const response = await fetch(`http://0.0.0.0:${etlServerPort}/start-etl-pipeline`, {
             method: "POST",
         });
         const data = await response.json();
@@ -64,7 +65,7 @@ app.post("/start-etl-server", async (request, reply) => {
     return reply.send({ message: "ETL server already running" });
   }
 
-  const etlPath = path.join(__dirname, "etl.js");
+  const etlPath = path.join(__dirname, "etl-server.js");
 
   etlProcess = fork(etlPath, [], {
     stdio: ["inherit", "inherit", "inherit", "ipc"],
@@ -103,14 +104,14 @@ app.post("/stop-etl-server", async (request, reply) => {
     return reply.send({ message: "Etl pipeline not running" });
   }
 
-  sendMessageToEtl({ type: "SHUTDOWN" });
+  sendMessageToEtlServer({ type: "SHUTDOWN" });
 
   return reply.send({ message: "Shutdown signal sent to etl server" });
 });
 
 // Example additional IPC trigger
-app.post("/ping-etl", async (request, reply) => {
-  sendMessageToEtl({ type: "PING", timestamp: Date.now() });
+app.post("/ping-etl-server", async (request, reply) => {
+  sendMessageToEtlServer({ type: "PING", timestamp: Date.now() });
 
   return reply.send({ message: "Ping sent" });
 });
@@ -118,7 +119,7 @@ app.post("/ping-etl", async (request, reply) => {
 async function startParent() {
   try {
     await app.listen({ port: serverPort, host: "0.0.0.0" });
-    app.log.info("Parent server running on port :"+ serverPort);
+    app.log.info("Parent server running on port : "+ serverPort);
   } catch (err) {
     app.log.error(err);
     process.exit(1);
