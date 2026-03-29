@@ -20,8 +20,10 @@
   },
   "homepage": "https://github.com/skazhar42/multi-process-etl-pipeline#readme",
   "dependencies": {
+    "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "fastify": "^5.8.4"
+    "fastify": "^5.8.4",
+    "tsid-ts": "^0.0.9"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

@@ -6,61 +6,83 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const fastify_1 = __importDefault(require("fastify"));
 const child_process_1 = require("child_process");
 const path_1 = __importDefault(require("path"));
+const tsid_ts_1 = require("tsid-ts");
+const dotenv_1 = __importDefault(require("dotenv"));
+dotenv_1.default.config();
+const pendingMessages = new Map();
+const pendingResponses = new Map();
 const app = (0, fastify_1.default)({ logger: true });
-const etlServerPort = 9000;
-const serverPort = 3000;
+const serverPort = process.env.SERVER_PORT ? parseInt(process.env.SERVER_PORT) : 3000;
 let etlProcess = null;
 // Helper to send IPC message safely
-function sendMessageToEtlServer(message) {
+function sendMessageToEtlServer(type, message) {
     if (etlProcess && etlProcess.connected) {
-        etlProcess.send(message);
+        const id = (0, tsid_ts_1.getTsid)().toString();
+        const msg = { id, type, message };
+        etlProcess.send(msg);
+        pendingMessages.set(id, msg);
+        return id;
     }
     else {
         app.log.warn("Etl server not running");
+        return undefined;
     }
 }
+function waitForResponse(id, timeoutMs = 5000) {
+    return new Promise((resolve) => {
+        function cleanup() {
+            clearInterval(timer);
+            clearTimeout(timeout);
+            pendingMessages.delete(id);
+            pendingResponses.delete(id);
+        }
+        const intervalMs = 50;
+        const timer = setInterval(() => {
+            const response = pendingResponses.get(id);
+            if (response) {
+                cleanup();
+                resolve(response);
+            }
+        }, intervalMs);
+        const timeout = setTimeout(() => {
+            cleanup();
+            resolve(undefined);
+        }, timeoutMs);
+    });
+}
+const generateHttpResponse = async (id, reply) => {
+    if (!id) {
+        return reply.status(500).send({ error: "Etl server not running" });
+    }
+    const response = await waitForResponse(id);
+    if (!response) {
+        return reply.status(500).send({ error: "No response from etl server" });
+    }
+    return reply.send({ status: response.message });
+};
 app.get("/health", async () => {
     return { status: "parent-ok" };
 });
 app.get("/etl/health", async (request, reply) => {
-    try {
-        const response = await fetch(`http://0.0.0.0:${etlServerPort}/health`);
-        const data = await response.json();
-        return data;
-    }
-    catch (err) {
-        return reply.status(500).send({ error: `Failed to reach etl server with error: ${err}` });
-    }
+    const id = sendMessageToEtlServer("HEALTH", "Checking Etl server health");
+    return generateHttpResponse(id, reply);
 });
 app.post("/etl/start-pipeline", async (request, reply) => {
-    try {
-        const response = await fetch(`http://0.0.0.0:${etlServerPort}/start-etl-pipeline`, {
-            method: "POST",
-        });
-        const data = await response.json();
-        return data;
-    }
-    catch (err) {
-        return reply.status(500).send({ error: `Failed to reach etl server with error: ${err}` });
-    }
+    const id = sendMessageToEtlServer("START_PIPELINE", "Start Etl pipeline");
+    return generateHttpResponse(id, reply);
 });
-app.post("/etl/ping-parent", async (request, reply) => {
-    try {
-        const body = request.body;
-        const response = await fetch(`http://0.0.0.0:${etlServerPort}/ping-parent`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: body?.message ?? "Hello from parent" }),
-        });
-        const data = await response.json();
-        return data;
-    }
-    catch (err) {
-        return reply.status(500).send({ error: `Failed to ping etl server with error: ${err}` });
-    }
+// Stop etl server
+app.post("/etl/stop-server", async (request, reply) => {
+    const id = sendMessageToEtlServer("STOP_SERVER", "Shutting down Etl server");
+    return generateHttpResponse(id, reply);
+});
+// Example additional IPC trigger
+app.post("/etl/ping-server", async (request, reply) => {
+    const id = sendMessageToEtlServer("PING", "Hello Etl server, this is parent!");
+    return generateHttpResponse(id, reply);
 });
 // Start etl server
-app.post("/start-etl-server", async (request, reply) => {
+app.post("/etl/start-server", async (request, reply) => {
     if (etlProcess) {
         return reply.send({ message: "ETL server already running" });
     }
@@ -71,15 +93,10 @@ app.post("/start-etl-server", async (request, reply) => {
     app.log.info("Etl process started");
     // Listen for messages from etl
     etlProcess.on("message", (msg) => {
-        app.log.info({ msg }, "Message from Etl server");
-        if (msg.type === "READY") {
-            app.log.info("Etl server is ready");
-        }
-        if (msg.type === "STOPPED") {
-            app.log.info("Etl server stopped");
-        }
-        if (msg.type === "PING_PARENT") {
-            app.log.info("Etl server says: " + msg.message);
+        app.log.info({ msg });
+        const pending = pendingMessages.get(msg.id);
+        if (pending) {
+            pendingResponses.set(msg.id, msg);
         }
     });
     etlProcess.on("exit", (code) => {
@@ -87,19 +104,6 @@ app.post("/start-etl-server", async (request, reply) => {
         etlProcess = null;
     });
     return reply.send({ message: "Etl server started" });
-});
-// Stop etl server
-app.post("/stop-etl-server", async (request, reply) => {
-    if (!etlProcess) {
-        return reply.send({ message: "Etl pipeline not running" });
-    }
-    sendMessageToEtlServer({ type: "SHUTDOWN" });
-    return reply.send({ message: "Shutdown signal sent to etl server" });
-});
-// Example additional IPC trigger
-app.post("/ping-etl-server", async (request, reply) => {
-    sendMessageToEtlServer({ type: "PING", timestamp: Date.now() });
-    return reply.send({ message: "Ping sent" });
 });
 async function startParent() {
     try {

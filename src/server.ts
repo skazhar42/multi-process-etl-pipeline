@@ -1,21 +1,85 @@
 import Fastify from "fastify";
 import { fork, ChildProcess } from "child_process";
 import path from "path";
+import { getTsid } from 'tsid-ts';
+import dotenv from "dotenv";
+
+dotenv.config();
+
+type messages = "HEALTH" | "START_PIPELINE" | "STOP_SERVER" | "PING" | "READY";
+
+type messageFromServer = {
+  id: string;
+  type: messages;
+  message: string;
+}
+
+type messageToServer = {
+  id: string;
+  type: messages;
+  pid: number;
+  message: string;
+}
+
+const pendingMessages = new Map<string, messageFromServer>();
+const pendingResponses = new Map<string, messageToServer>();
+
 
 const app = Fastify({ logger: true });
-const etlServerPort = 9000;
-const serverPort = 3000;
+const serverPort = process.env.SERVER_PORT ? parseInt(process.env.SERVER_PORT) : 3000;
 
 let etlProcess: ChildProcess | null = null;
 
-
 // Helper to send IPC message safely
-function sendMessageToEtlServer(message: any) {
+function sendMessageToEtlServer(type: messages, message: string) {
   if (etlProcess && etlProcess.connected) {
-    etlProcess.send(message);
+    const id = getTsid().toString();
+    const msg: messageFromServer = { id, type, message };
+    etlProcess.send(msg);
+    pendingMessages.set(id, msg);
+    return id;
   } else {
     app.log.warn("Etl server not running");
+    return undefined;
   }
+}
+
+function waitForResponse(
+  id: string,
+  timeoutMs = 5000
+): Promise<messageToServer | undefined> {
+  return new Promise((resolve) => {
+    function cleanup() {
+      clearInterval(timer);
+      clearTimeout(timeout);
+      pendingMessages.delete(id);
+      pendingResponses.delete(id);
+    }
+    const intervalMs = 50;
+    const timer = setInterval(() => {
+      const response = pendingResponses.get(id);
+      if (response) {
+        cleanup();
+        resolve(response);
+      }
+    }, intervalMs);
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve(undefined);
+    }, timeoutMs);
+    
+  });
+}
+
+const generateHttpResponse = async (id: string | undefined, reply: any) => {
+  if (!id) {
+      return reply.status(500).send({ error: "Etl server not running" });
+    }
+    const response = await waitForResponse(id);
+    if (!response) {
+      return reply.status(500).send({ error: "No response from etl server" });
+    }
+    return reply.send({ status: response.message });
 }
 
 app.get("/health", async () => {
@@ -23,44 +87,29 @@ app.get("/health", async () => {
 });
 
 app.get("/etl/health", async (request, reply) => {
-    try {
-        const response = await fetch(`http://0.0.0.0:${etlServerPort}/health`);
-        const data = await response.json();
-        return data;
-    } catch (err) {
-        return reply.status(500).send({ error: `Failed to reach etl server with error: ${err}` });
-    }
+    const id = sendMessageToEtlServer("HEALTH", "Checking Etl server health");
+    return generateHttpResponse(id, reply);
 });
 
 app.post("/etl/start-pipeline", async (request, reply) => {
-    try {
-        const response = await fetch(`http://0.0.0.0:${etlServerPort}/start-etl-pipeline`, {
-            method: "POST",
-        });
-        const data = await response.json();
-        return data;
-    } catch (err) {
-        return reply.status(500).send({ error: `Failed to reach etl server with error: ${err}` });
-    }
+    const id = sendMessageToEtlServer("START_PIPELINE", "Start Etl pipeline");
+    return generateHttpResponse(id, reply);
 });
 
-app.post("/etl/ping-parent", async (request, reply) => {
-    try {
-        const body = request.body as any;
-        const response = await fetch(`http://0.0.0.0:${etlServerPort}/ping-parent`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: body?.message ?? "Hello from parent" }),
-        });
-        const data = await response.json();
-        return data;
-    } catch (err) {  
-        return reply.status(500).send({ error: `Failed to ping etl server with error: ${err}` });
-    }
+// Stop etl server
+app.post("/etl/stop-server", async (request, reply) => {
+  const id = sendMessageToEtlServer("STOP_SERVER", "Shutting down Etl server");
+  return generateHttpResponse(id, reply);
+});
+
+// Example additional IPC trigger
+app.post("/etl/ping-server", async (request, reply) => {
+  const id = sendMessageToEtlServer("PING", "Hello Etl server, this is parent!");
+  return generateHttpResponse(id, reply);
 });
 
 // Start etl server
-app.post("/start-etl-server", async (request, reply) => {
+app.post("/etl/start-server", async (request, reply) => {
   if (etlProcess) {
     return reply.send({ message: "ETL server already running" });
   }
@@ -74,19 +123,11 @@ app.post("/start-etl-server", async (request, reply) => {
   app.log.info("Etl process started");
 
   // Listen for messages from etl
-  etlProcess.on("message", (msg : any) => {
-    app.log.info({ msg }, "Message from Etl server");
-
-    if (msg.type === "READY") {
-      app.log.info("Etl server is ready");
-    }
-
-    if (msg.type === "STOPPED") {
-      app.log.info("Etl server stopped");
-    }
-
-    if (msg.type === "PING_PARENT") {
-      app.log.info("Etl server says: " + msg.message);
+  etlProcess.on("message", (msg : messageToServer) => {
+    app.log.info({ msg });
+    const pending = pendingMessages.get(msg.id);
+    if (pending) {
+      pendingResponses.set(msg.id, msg);
     }
   });
 
@@ -96,24 +137,6 @@ app.post("/start-etl-server", async (request, reply) => {
   });
 
   return reply.send({ message: "Etl server started" });
-});
-
-// Stop etl server
-app.post("/stop-etl-server", async (request, reply) => {
-  if (!etlProcess) {
-    return reply.send({ message: "Etl pipeline not running" });
-  }
-
-  sendMessageToEtlServer({ type: "SHUTDOWN" });
-
-  return reply.send({ message: "Shutdown signal sent to etl server" });
-});
-
-// Example additional IPC trigger
-app.post("/ping-etl-server", async (request, reply) => {
-  sendMessageToEtlServer({ type: "PING", timestamp: Date.now() });
-
-  return reply.send({ message: "Ping sent" });
 });
 
 async function startParent() {
