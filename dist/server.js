@@ -103,7 +103,9 @@ app.post("/etl/start-server", async (request, reply) => {
         app.log.info(`Etl server exited with code ${code}`);
         etlProcess = null;
     });
-    return reply.send({ message: "Etl server started" });
+    const id = sendMessageToEtlServer("READY", "Are you ready Etl server ?");
+    const response = generateHttpResponse(id, reply);
+    return response;
 });
 async function startParent() {
     try {
