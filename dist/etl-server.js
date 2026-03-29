@@ -65,8 +65,11 @@ process.on("message", async (msg) => {
             const res = startEtlPipeline();
             sendMessageToParent(msg, res);
             break;
-        case "READY":
-            sendMessageToParent(msg, "ETL server is ready !!");
+        case "START_SERVER":
+            sendMessageToParent(msg, "ETL server has been started !!");
+            break;
+        case "PIPELINE_STATUS":
+            sendMessageToParent(msg, pipelineRunning ? "ETL pipeline is running" : "ETL pipeline is not running");
             break;
         default:
             exports.etlServer.log.warn("Unknown message type");

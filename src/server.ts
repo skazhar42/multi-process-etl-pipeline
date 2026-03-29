@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-type messages = "HEALTH" | "START_PIPELINE" | "STOP_SERVER" | "PING" | "READY";
+type messages = "HEALTH" | "START_PIPELINE" | "STOP_SERVER" | "PING" | "START_SERVER" | "PIPELINE_STATUS";
 
 type messageFromServer = {
   id: string;
@@ -95,6 +95,11 @@ app.post("/etl/start-pipeline", async (request, reply) => {
     return generateHttpResponse(id, reply);
 });
 
+app.get("/etl/pipeline-status", async (request, reply) => {
+    const id = sendMessageToEtlServer("PIPELINE_STATUS", "Check Etl pipeline status");
+    return generateHttpResponse(id, reply);
+});
+
 // Stop etl server
 app.post("/etl/stop-server", async (request, reply) => {
   const id = sendMessageToEtlServer("STOP_SERVER", "Shutting down Etl server");
@@ -135,7 +140,7 @@ app.post("/etl/start-server", async (request, reply) => {
     etlProcess = null;
   });
 
-  const id = sendMessageToEtlServer("READY", "Are you ready Etl server ?");
+  const id = sendMessageToEtlServer("START_SERVER", "Are you ready Etl server ?");
   const response = generateHttpResponse(id, reply);
 
   return response;

@@ -12,7 +12,7 @@ const etlServerPort = process.env.ETL_SERVER_PORT ? parseInt(process.env.ETL_SER
 let serverStarted = false;
 let pipelineRunning = false;
 
-type messages = "HEALTH" | "START_PIPELINE" | "STOP_SERVER" | "PING" | "READY";
+type messages = "HEALTH" | "START_PIPELINE" | "STOP_SERVER" | "PING" | "START_SERVER" | "PIPELINE_STATUS";
 
 type messageFromServer = {
   id: string;
@@ -82,8 +82,11 @@ process.on("message", async (msg: messageFromServer) => {
       const res = startEtlPipeline();
       sendMessageToParent(msg, res);
       break;
-    case "READY":
-      sendMessageToParent(msg, "ETL server is ready !!");
+    case "START_SERVER":
+      sendMessageToParent(msg, "ETL server has been started !!");
+      break;
+    case "PIPELINE_STATUS":
+      sendMessageToParent(msg, pipelineRunning ? "ETL pipeline is running" : "ETL pipeline is not running");
       break;
     default:
       etlServer.log.warn("Unknown message type");
